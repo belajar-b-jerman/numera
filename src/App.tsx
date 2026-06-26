@@ -13,30 +13,36 @@ import {
   type SettingsState,
 } from './storage'
 
+type AppScreen = 'home' | 'intro' | 'practice' | 'result' | 'dashboard' | 'settings'
+type LearningBand = Level['band']
+
 const firstLevel = levels[0]
-const sessionLength = 10
+const defaultSessionLength = 10
+const classOneLevelIds: LevelId[] = ['add-10', 'subtract-10', 'bonds-10', 'add-20']
 
 function App() {
   const [selectedId, setSelectedId] = useState<LevelId>(firstLevel.id)
+  const [selectedBand, setSelectedBand] = useState<LearningBand | null>(null)
+  const [questionCount, setQuestionCount] = useState(defaultSessionLength)
   const [seed, setSeed] = useState(() => Date.now() % 100000)
   const [progress, setProgress] = useState<ProgressState>(() => loadProgress())
   const [settings, setSettings] = useState<SettingsState>(() => loadSettings())
   const [feedback, setFeedback] = useState<'idle' | 'correct' | 'wrong'>('idle')
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
-  const [session, setSession] = useState(() => createSession(firstLevel.id, Date.now() % 100000))
+  const [session, setSession] = useState(() => createSession(firstLevel.id, Date.now() % 100000, defaultSessionLength))
   const [questionIndex, setQuestionIndex] = useState(0)
   const [sessionAnswers, setSessionAnswers] = useState<SessionAnswer[]>([])
-  const [screen, setScreen] = useState<'practice' | 'result' | 'about' | 'settings'>('practice')
+  const [screen, setScreen] = useState<AppScreen>('home')
   const [sessionSaved, setSessionSaved] = useState(false)
   const [hintOpen, setHintOpen] = useState(false)
   const [typedAnswer, setTypedAnswer] = useState('')
-  const [levelPickerOpen, setLevelPickerOpen] = useState(false)
 
   const selectedLevel = levels.find((level) => level.id === selectedId) ?? firstLevel
   const challenge = useMemo(() => session[questionIndex] ?? makeChallenge(selectedId, seed), [questionIndex, seed, selectedId, session])
   const levelProgress = progress.levels[selectedId]
   const accuracy = levelProgress?.attempts ? Math.round((levelProgress.correct / levelProgress.attempts) * 100) : 0
   const coachMessage = getCoachMessage(levelProgress?.attempts ?? 0, accuracy, levelProgress?.streak ?? 0)
+  const currentTotal = session.length || questionCount
 
   useEffect(() => {
     saveProgress(progress)
@@ -46,10 +52,27 @@ function App() {
     saveSettings(settings)
   }, [settings])
 
-  function chooseLevel(levelId: LevelId) {
+  useEffect(() => {
+    if (screen !== 'practice' || feedback !== 'idle' || !settings.voiceEnabled) return
+    speak(`${challenge.prompt}. ${challenge.expression}`)
+  }, [challenge.expression, challenge.prompt, feedback, screen, settings.voiceEnabled])
+
+  function openLearning() {
+    setScreen('home')
+  }
+
+  function chooseBand(band: LearningBand) {
+    setSelectedBand(band)
+    setScreen('home')
+  }
+
+  function openLevelIntro(levelId: LevelId) {
     setSelectedId(levelId)
-    startSession(levelId)
-    setLevelPickerOpen(false)
+    setScreen('intro')
+    setFeedback('idle')
+    setSelectedAnswer(null)
+    setHintOpen(false)
+    setTypedAnswer('')
   }
 
   function answer(option: number) {
@@ -57,6 +80,7 @@ function App() {
     const correct = option === challenge.answer
     setSelectedAnswer(option)
     setFeedback(correct ? 'correct' : 'wrong')
+    if (settings.voiceEnabled) speak(correct ? 'Benar.' : `Belum tepat. Jawaban yang benar ${challenge.answer}.`)
     setSessionAnswers((current) => [
       ...current,
       {
@@ -76,8 +100,12 @@ function App() {
   }
 
   function nextChallenge() {
-    if (questionIndex + 1 >= sessionLength) {
+    if (questionIndex + 1 >= currentTotal) {
       saveSessionResult()
+      setFeedback('idle')
+      setSelectedAnswer(null)
+      setHintOpen(false)
+      setTypedAnswer('')
       setScreen('result')
       return
     }
@@ -88,10 +116,10 @@ function App() {
     setTypedAnswer('')
   }
 
-  function startSession(levelId = selectedId) {
+  function startSession(levelId = selectedId, total = questionCount) {
     const nextSeed = Date.now() % 100000
     setSeed(nextSeed)
-    setSession(createSession(levelId, nextSeed))
+    setSession(createSession(levelId, nextSeed, total))
     setQuestionIndex(0)
     setSessionAnswers([])
     setFeedback('idle')
@@ -116,130 +144,83 @@ function App() {
   function saveSessionResult() {
     if (sessionSaved) return
     setProgress((current) =>
-      recordSession(current, selectedId, sessionAnswers.filter((answer) => answer.correct).length, sessionLength, sessionAnswers),
+      recordSession(current, selectedId, sessionAnswers.filter((answer) => answer.correct).length, currentTotal, sessionAnswers),
     )
     setSessionSaved(true)
   }
+
+  const learningActive = screen === 'home' || screen === 'intro' || screen === 'practice' || screen === 'result'
 
   return (
     <main className="app-shell">
       <header className="topbar">
         <div>
           <p className="eyebrow">Numera</p>
-          <h1>Numerasi bertahap untuk anak usia dini</h1>
+          <h1>Numera</h1>
+          <p className="hero-subtitle">Latihan numerasi berbasis Singapore Math untuk anak TK B sampai kelas 2.</p>
         </div>
         <div className="top-actions">
           <div className="score-strip" aria-label="Progress belajar">
             <span>{progress.stars} poin</span>
-            <span>Soal {Math.min(questionIndex + 1, sessionLength)}/{sessionLength}</span>
+            <span>Soal {screen === 'practice' ? Math.min(questionIndex + 1, currentTotal) : 0}/{currentTotal}</span>
             <span>{accuracy}% level ini</span>
           </div>
-          <nav className="main-nav" aria-label="Navigasi utama">
-            <button className={screen !== 'about' ? 'active' : ''} type="button" onClick={() => setScreen('practice')}>
-              Latihan
-            </button>
-            <button className={screen === 'about' ? 'active' : ''} type="button" onClick={() => setScreen('about')}>
-              About
-            </button>
-            <button className={screen === 'settings' ? 'active' : ''} type="button" onClick={() => setScreen('settings')}>
-              Pengaturan
-            </button>
-          </nav>
+          <PrimaryNav active={screen} learningActive={learningActive} setScreen={setScreen} openLearning={openLearning} />
         </div>
       </header>
 
-      {screen === 'about' ? (
-        <AboutPage selectedLevel={selectedLevel} levelProgress={levelProgress} coachMessage={coachMessage} />
+      {screen === 'dashboard' ? (
+        <DashboardPage progress={progress} />
       ) : screen === 'settings' ? (
-        <SettingsPage progress={progress} setProgress={setProgress} settings={settings} setSettings={setSettings} />
+        <SettingsPage
+          coachMessage={coachMessage}
+          levelProgress={levelProgress}
+          progress={progress}
+          selectedLevel={selectedLevel}
+          setProgress={setProgress}
+          settings={settings}
+          setSettings={setSettings}
+        />
       ) : screen === 'result' ? (
-        <section className="result-panel" aria-label="Hasil latihan">
-          <p className="eyebrow">Hasil Latihan</p>
-          <h2>{selectedLevel.title}</h2>
-          <strong>{sessionAnswers.filter((answer) => answer.correct).length}/{sessionLength} benar</strong>
-          <p>{getResultMessage(sessionAnswers.filter((answer) => answer.correct).length)}</p>
-          <button type="button" onClick={() => startSession()}>Ulangi paket 10 soal</button>
-        </section>
+        <ResultPage
+          correct={sessionAnswers.filter((answer) => answer.correct).length}
+          level={selectedLevel}
+          onBackToModules={() => setScreen('home')}
+          onRepeat={() => startSession(selectedId, currentTotal)}
+          total={currentTotal}
+        />
+      ) : screen === 'intro' ? (
+        <IntroPage
+          level={selectedLevel}
+          questionCount={questionCount}
+          setQuestionCount={setQuestionCount}
+          startSession={() => startSession(selectedId, questionCount)}
+        />
+      ) : screen === 'practice' ? (
+        <PracticePage
+          answer={answer}
+          challenge={challenge}
+          feedback={feedback}
+          hintOpen={hintOpen}
+          questionIndex={questionIndex}
+          resetCurrentSession={resetCurrentSession}
+          selectedAnswer={selectedAnswer}
+          selectedLevel={selectedLevel}
+          setHintOpen={setHintOpen}
+          settings={settings}
+          submitTypedAnswer={submitTypedAnswer}
+          total={currentTotal}
+          typedAnswer={typedAnswer}
+          setTypedAnswer={setTypedAnswer}
+        />
       ) : (
-        <>
-
-      <section className="workspace" aria-label="Arena belajar">
-        <section className="play-area">
-          <section className="level-summary" style={{ '--level-color': selectedLevel.color } as CSSProperties}>
-            <span className="level-index">{levels.findIndex((level) => level.id === selectedId) + 1}</span>
-            <div>
-              <p className="eyebrow">{selectedLevel.band} / {selectedLevel.strand}</p>
-              <h2>{selectedLevel.title}</h2>
-              <p>{selectedLevel.subtitle}</p>
-            </div>
-            <button type="button" onClick={() => setLevelPickerOpen(true)}>Ganti level</button>
-          </section>
-
-          <div className="lesson-band" style={{ '--level-color': selectedLevel.color } as CSSProperties}>
-            <div>
-              <p className="eyebrow">{selectedLevel.band} / {selectedLevel.strand}</p>
-              <h2>{selectedLevel.title}</h2>
-              <p>{selectedLevel.subtitle}</p>
-            </div>
-            <div className="lesson-actions">
-              <span className="lesson-badge">{challenge.strategy}</span>
-              <button type="button" onClick={resetCurrentSession}>Reset sesi</button>
-            </div>
-          </div>
-
-          <div className="challenge-board">
-            <div className="story-panel">
-              <p>{challenge.story}</p>
-              <h3>{challenge.prompt}</h3>
-              <strong>{challenge.expression}</strong>
-            </div>
-
-            <VisualModel challenge={challenge} showHint={hintOpen} />
-
-            {settings.answerMode === 'choice' ? (
-              <div className="answer-grid" aria-label="Pilihan jawaban">
-                {challenge.options.map((option) => (
-                  <button
-                    key={option}
-                    className={getAnswerClass(option, selectedAnswer, challenge.answer, feedback)}
-                    disabled={feedback !== 'idle'}
-                    type="button"
-                    onClick={() => answer(option)}
-                  >
-                    {option}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="typed-answer">
-                <input
-                  aria-label="Jawaban"
-                  disabled={feedback !== 'idle'}
-                  inputMode="numeric"
-                  value={typedAnswer}
-                  onChange={(event) => setTypedAnswer(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') submitTypedAnswer()
-                  }}
-                />
-                <button disabled={feedback !== 'idle' || typedAnswer.trim() === ''} type="button" onClick={submitTypedAnswer}>
-                  Cek jawaban
-                </button>
-              </div>
-            )}
-
-            <div className="hint-row">
-              {settings.hintsEnabled && (
-                <button type="button" onClick={() => setHintOpen((value) => !value)}>
-                  {hintOpen ? 'Sembunyikan hint' : 'Hint'}
-                </button>
-              )}
-              {hintOpen && <span>{challenge.hint}</span>}
-            </div>
-          </div>
-        </section>
-      </section>
-        </>
+        <LearningHome
+          chooseBand={chooseBand}
+          openLevelIntro={openLevelIntro}
+          progress={progress}
+          selectedBand={selectedBand}
+          setSelectedBand={setSelectedBand}
+        />
       )}
 
       {feedback !== 'idle' && (
@@ -248,126 +229,366 @@ function App() {
           selectedAnswer={selectedAnswer}
           correctAnswer={challenge.answer}
           onNext={nextChallenge}
-          isLast={questionIndex + 1 >= sessionLength}
+          isLast={questionIndex + 1 >= currentTotal}
         />
       )}
 
-      {levelPickerOpen && (
-        <div className="picker-backdrop" role="dialog" aria-modal="true" aria-label="Pilih level">
-          <section className="level-picker">
-            <div className="picker-header">
-              <div>
-                <p className="eyebrow">Pilih Level</p>
-                <h2>Modul latihan</h2>
-              </div>
-              <button type="button" onClick={() => setLevelPickerOpen(false)}>Tutup</button>
-            </div>
-            <div className="level-list">
-              {levels.map((level, index) => (
-                <button
-                  key={level.id}
-                  className={level.id === selectedId ? 'level-node active' : 'level-node'}
-                  onClick={() => chooseLevel(level.id)}
-                  style={{ '--level-color': level.color } as CSSProperties}
-                  type="button"
-                >
-                  <span className="level-index">{index + 1}</span>
-                  <span>
-                    <strong>{level.title}</strong>
-                    <small>{level.band} - {level.strand}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
+      <PrimaryNav
+        active={screen}
+        className="bottom-nav"
+        learningActive={learningActive}
+        setScreen={setScreen}
+        openLearning={openLearning}
+      />
     </main>
   )
 }
 
-function getAnswerClass(
-  option: number,
-  selectedAnswer: number | null,
-  answer: number,
-  feedback: 'idle' | 'correct' | 'wrong',
-) {
-  if (feedback === 'idle') return ''
-  if (option === answer) return 'correct-answer'
-  if (option === selectedAnswer) return 'wrong-answer'
-  return 'dimmed-answer'
-}
-
-function getCoachMessage(attempts: number, accuracy: number, streak: number) {
-  if (attempts === 0) return 'Mulai dengan mode santai. Fokuskan anak pada strategi, bukan kecepatan.'
-  if (streak >= 3) return 'Streak sudah bagus. Anak siap diberi soal baru dengan angka sedikit lebih besar.'
-  if (accuracy >= 80) return 'Konsep mulai kuat. Lanjutkan variasi cerita agar anak tidak hanya menghafal pola soal.'
-  if (accuracy >= 50) return 'Masih perlu penguatan. Tampilkan benda atau garis bilangan sebelum simbol angka.'
-  return 'Turunkan tekanan. Ulangi tahap concrete: hitung benda, kelompokkan, lalu baru jawab.'
-}
-
-function AboutPage({
-  selectedLevel,
-  levelProgress,
-  coachMessage,
+function PrimaryNav({
+  active,
+  className = 'main-nav',
+  learningActive,
+  openLearning,
+  setScreen,
 }: {
-  selectedLevel: Level
-  levelProgress: { attempts: number; correct: number; streak: number } | undefined
-  coachMessage: string
+  active: AppScreen
+  className?: string
+  learningActive: boolean
+  openLearning: () => void
+  setScreen: (screen: AppScreen) => void
 }) {
   return (
-    <section className="about-page" aria-label="Kurikulum dan metode">
-      <div className="about-hero">
-        <p className="eyebrow">Metode Belajar</p>
-        <h2>Merdeka-aligned Singapore Math</h2>
-        <p>
-          Aplikasi ini memakai Kurikulum Merdeka sebagai peta materi, lalu menggunakan pendekatan Singapore Math
-          untuk membangun konsep melalui model konkret, gambar, dan simbol.
-        </p>
+    <nav className={className} aria-label="Navigasi utama">
+      <button className={learningActive ? 'active' : ''} type="button" onClick={openLearning}>
+        <span>Latihan</span>
+      </button>
+      <button className={active === 'dashboard' ? 'active' : ''} type="button" onClick={() => setScreen('dashboard')}>
+        <span>Dashboard</span>
+      </button>
+      <button className={active === 'settings' ? 'active' : ''} type="button" onClick={() => setScreen('settings')}>
+        <span>Setting</span>
+      </button>
+    </nav>
+  )
+}
+
+function LearningHome({
+  chooseBand,
+  openLevelIntro,
+  progress,
+  selectedBand,
+  setSelectedBand,
+}: {
+  chooseBand: (band: LearningBand) => void
+  openLevelIntro: (levelId: LevelId) => void
+  progress: ProgressState
+  selectedBand: LearningBand | null
+  setSelectedBand: (band: LearningBand | null) => void
+}) {
+  const bands: { band: LearningBand; title: string; body: string }[] = [
+    { band: 'TK B', title: 'TK B', body: 'Fondasi bilangan, jumlah benda, dan perbandingan awal.' },
+    { band: 'Kelas 1', title: 'Kelas 1', body: 'Operasi dasar, number bonds, dan strategi make ten.' },
+    { band: 'Kelas 2', title: 'Kelas 2', body: 'Nilai tempat, operasi dua digit, perkalian dan pembagian awal.' },
+  ]
+
+  const visibleLevels = getLevelsForBand(selectedBand)
+
+  return (
+    <section className="learning-home" aria-label="Pilih latihan">
+      <div className="section-heading">
+        <p className="eyebrow">Latihan</p>
+        <h2>Pilih jenjang belajar</h2>
       </div>
-      <div className="curriculum-grid">
-        {curriculumNotes.map((note) => (
-          <article key={note.title}>
-            <h3>{note.title}</h3>
-            <p>{note.body}</p>
-          </article>
+      <div className="grade-grid">
+        {bands.map((item) => (
+          <button
+            key={item.band}
+            className={selectedBand === item.band ? 'grade-card active' : 'grade-card'}
+            type="button"
+            onClick={() => chooseBand(item.band)}
+          >
+            <strong>{item.title}</strong>
+            <span>{item.body}</span>
+          </button>
         ))}
       </div>
-      <section className="teacher-panel" aria-label="Ringkasan level">
-        <div>
-          <p className="eyebrow">Catatan Level Aktif</p>
-          <h2>{selectedLevel.goal}</h2>
-          <p className="coach-message">{coachMessage}</p>
+
+      {selectedBand && (
+        <section className="module-section" aria-label={`Latihan ${selectedBand}`}>
+          <div className="module-heading">
+            <div>
+              <p className="eyebrow">{selectedBand}</p>
+              <h2>Modul latihan</h2>
+            </div>
+            <button type="button" onClick={() => setSelectedBand(null)}>Ganti jenjang</button>
+          </div>
+          <div className="module-grid">
+            {visibleLevels.map((level) => {
+              const levelIndex = levels.findIndex((item) => item.id === level.id) + 1
+              const levelProgress = progress.levels[level.id]
+              const accuracy = levelProgress?.attempts ? Math.round((levelProgress.correct / levelProgress.attempts) * 100) : 0
+              return (
+                <button
+                  key={level.id}
+                  className="module-card"
+                  style={{ '--level-color': level.color } as CSSProperties}
+                  type="button"
+                  onClick={() => openLevelIntro(level.id)}
+                >
+                  <span className="level-index">{levelIndex}</span>
+                  <strong>{level.title}</strong>
+                  <small>{level.subtitle}</small>
+                  <b>{levelProgress?.attempts ? `${accuracy}% akurasi` : 'Belum mulai'}</b>
+                </button>
+              )
+            })}
+            {selectedBand === 'Kelas 1' && (
+              <article className="module-card exam-card" aria-label="Mode ujian belum tersedia">
+                <span className="level-index">U</span>
+                <strong>Mode Ujian</strong>
+                <small>Campuran semua latihan Kelas 1.</small>
+                <b>Segera dibuat</b>
+              </article>
+            )}
+          </div>
+        </section>
+      )}
+    </section>
+  )
+}
+
+function IntroPage({
+  level,
+  questionCount,
+  setQuestionCount,
+  startSession,
+}: {
+  level: Level
+  questionCount: number
+  setQuestionCount: (count: number) => void
+  startSession: () => void
+}) {
+  const tips = getLevelTips(level.id)
+  return (
+    <section className="intro-page" aria-label="Persiapan latihan">
+      <article className="intro-card" style={{ '--level-color': level.color } as CSSProperties}>
+        <p className="eyebrow">{level.band} / {level.strand}</p>
+        <h2>{level.title}</h2>
+        <p>{level.goal}</p>
+        <div className="method-grid">
+          <div>
+            <strong>Fokus konsep</strong>
+            <span>{level.merdeka}</span>
+          </div>
+          <div>
+            <strong>Singapore Math</strong>
+            <span>{level.singapore}</span>
+          </div>
         </div>
-        <dl>
+        <div className="tips-box">
+          <strong>Tips mengerjakan</strong>
+          <ul>
+            {tips.map((tip) => <li key={tip}>{tip}</li>)}
+          </ul>
+        </div>
+        <div className="start-row">
+          <label>
+            Jumlah soal
+            <select value={questionCount} onChange={(event) => setQuestionCount(Number(event.target.value))}>
+              <option value={10}>10 soal</option>
+              <option value={15}>15 soal</option>
+              <option value={20}>20 soal</option>
+            </select>
+          </label>
+          <button type="button" onClick={startSession}>Mulai</button>
+        </div>
+      </article>
+    </section>
+  )
+}
+
+function PracticePage({
+  answer,
+  challenge,
+  feedback,
+  hintOpen,
+  questionIndex,
+  resetCurrentSession,
+  selectedAnswer,
+  selectedLevel,
+  setHintOpen,
+  settings,
+  submitTypedAnswer,
+  total,
+  typedAnswer,
+  setTypedAnswer,
+}: {
+  answer: (option: number) => void
+  challenge: Challenge
+  feedback: 'idle' | 'correct' | 'wrong'
+  hintOpen: boolean
+  questionIndex: number
+  resetCurrentSession: () => void
+  selectedAnswer: number | null
+  selectedLevel: Level
+  setHintOpen: (value: boolean | ((value: boolean) => boolean)) => void
+  settings: SettingsState
+  submitTypedAnswer: () => void
+  total: number
+  typedAnswer: string
+  setTypedAnswer: (value: string) => void
+}) {
+  return (
+    <section className="workspace" aria-label="Arena belajar">
+      <section className="play-area">
+        <div className="lesson-band" style={{ '--level-color': selectedLevel.color } as CSSProperties}>
           <div>
-            <dt>Progress level</dt>
-            <dd>
-              {levelProgress?.attempts ?? 0} percobaan, {levelProgress?.correct ?? 0} benar,
-              streak {levelProgress?.streak ?? 0}
-            </dd>
+            <p className="eyebrow">Soal {questionIndex + 1}/{total}</p>
+            <h2>{selectedLevel.title}</h2>
+            <p>{selectedLevel.subtitle}</p>
           </div>
-          <div>
-            <dt>Kurikulum Merdeka</dt>
-            <dd>{selectedLevel.merdeka}</dd>
+          <div className="lesson-actions">
+            <span className="lesson-badge">{challenge.strategy}</span>
+            <button type="button" onClick={resetCurrentSession}>Reset sesi</button>
           </div>
-          <div>
-            <dt>Singapore Math</dt>
-            <dd>{selectedLevel.singapore}</dd>
+        </div>
+
+        <div className="challenge-board">
+          <div className="story-panel">
+            <p>{challenge.story}</p>
+            <h3>{challenge.prompt}</h3>
+            <strong>{challenge.expression}</strong>
           </div>
-        </dl>
+
+          <VisualModel challenge={challenge} showHint={hintOpen} />
+
+          {settings.answerMode === 'choice' ? (
+            <div className="answer-grid" aria-label="Pilihan jawaban">
+              {challenge.options.map((option) => (
+                <button
+                  key={option}
+                  className={getAnswerClass(option, selectedAnswer, challenge.answer, feedback)}
+                  disabled={feedback !== 'idle'}
+                  type="button"
+                  onClick={() => answer(option)}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="typed-answer">
+              <input
+                aria-label="Jawaban"
+                disabled={feedback !== 'idle'}
+                inputMode="numeric"
+                value={typedAnswer}
+                onChange={(event) => setTypedAnswer(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') submitTypedAnswer()
+                }}
+              />
+              <button disabled={feedback !== 'idle' || typedAnswer.trim() === ''} type="button" onClick={submitTypedAnswer}>
+                Cek jawaban
+              </button>
+            </div>
+          )}
+
+          <div className="hint-row">
+            {settings.hintsEnabled && (
+              <button type="button" onClick={() => setHintOpen((value) => !value)}>
+                {hintOpen ? 'Sembunyikan hint' : 'Hint'}
+              </button>
+            )}
+            {hintOpen && <span>{challenge.hint}</span>}
+          </div>
+        </div>
       </section>
     </section>
   )
 }
 
+function ResultPage({
+  correct,
+  level,
+  onBackToModules,
+  onRepeat,
+  total,
+}: {
+  correct: number
+  level: Level
+  onBackToModules: () => void
+  onRepeat: () => void
+  total: number
+}) {
+  return (
+    <section className="result-panel" aria-label="Hasil latihan">
+      <p className="eyebrow">Hasil Latihan</p>
+      <h2>{level.title}</h2>
+      <strong>{correct}/{total} benar</strong>
+      <p>{getResultMessage(correct, total)}</p>
+      <div className="result-actions">
+        <button type="button" onClick={onRepeat}>Ulangi paket soal</button>
+        <button type="button" onClick={onBackToModules}>Pilih latihan lain</button>
+      </div>
+    </section>
+  )
+}
+
+function DashboardPage({ progress }: { progress: ProgressState }) {
+  const totalSessions = progress.sessions.length
+  const totalCorrect = progress.sessions.reduce((sum, session) => sum + session.correct, 0)
+  const totalQuestions = progress.sessions.reduce((sum, session) => sum + session.total, 0)
+  const average = totalQuestions ? Math.round((totalCorrect / totalQuestions) * 100) : 0
+
+  return (
+    <section className="dashboard-page" aria-label="Dashboard belajar">
+      <div className="section-heading">
+        <p className="eyebrow">Dashboard</p>
+        <h2>Laporan belajar</h2>
+        <p>Mockup awal untuk ringkasan sesi, akurasi, dan materi yang perlu diulang.</p>
+      </div>
+      <div className="dashboard-grid">
+        <article>
+          <span>Total sesi</span>
+          <strong>{totalSessions}</strong>
+        </article>
+        <article>
+          <span>Rata-rata benar</span>
+          <strong>{average}%</strong>
+        </article>
+        <article>
+          <span>Poin terkumpul</span>
+          <strong>{progress.stars}</strong>
+        </article>
+      </div>
+      <div className="history-list">
+        {progress.sessions.slice(0, 8).map((session) => (
+          <article key={session.id}>
+            <strong>{levels.find((level) => level.id === session.levelId)?.title ?? session.levelId}</strong>
+            <span>{new Date(session.date).toLocaleString('id-ID')}</span>
+            <b>{session.correct}/{session.total}</b>
+          </article>
+        ))}
+        {progress.sessions.length === 0 && <p className="empty-state">Belum ada sesi tersimpan. Mulai latihan untuk mengisi dashboard.</p>}
+      </div>
+    </section>
+  )
+}
+
 function SettingsPage({
+  coachMessage,
+  levelProgress,
   progress,
+  selectedLevel,
   setProgress,
   settings,
   setSettings,
 }: {
+  coachMessage: string
+  levelProgress: { attempts: number; correct: number; streak: number } | undefined
   progress: ProgressState
+  selectedLevel: Level
   setProgress: (progress: ProgressState) => void
   settings: SettingsState
   setSettings: (settings: SettingsState) => void
@@ -377,7 +598,7 @@ function SettingsPage({
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = 'petualangan-angka-data.json'
+    link.download = 'numera-data.json'
     link.click()
     URL.revokeObjectURL(url)
   }
@@ -401,8 +622,8 @@ function SettingsPage({
     <section className="settings-page" aria-label="Pengaturan">
       <div className="about-hero">
         <p className="eyebrow">Pengaturan</p>
-        <h2>Preferensi latihan dan data belajar</h2>
-        <p>Atur cara menjawab, tampilan bantuan, dan simpan atau pindahkan riwayat belajar ke perangkat lain.</p>
+        <h2>Preferensi dan metode belajar</h2>
+        <p>Atur cara menjawab, bantuan soal, suara, serta simpan atau pindahkan riwayat belajar ke perangkat lain.</p>
       </div>
 
       <div className="settings-grid">
@@ -415,6 +636,18 @@ function SettingsPage({
               onChange={(event) => setSettings({ ...settings, hintsEnabled: event.target.checked })}
             />
             <span>Tampilkan tombol Hint</span>
+          </label>
+        </article>
+
+        <article>
+          <h3>Suara</h3>
+          <label className="setting-row">
+            <input
+              checked={settings.voiceEnabled}
+              type="checkbox"
+              onChange={(event) => setSettings({ ...settings, voiceEnabled: event.target.checked })}
+            />
+            <span>Bacakan soal dan hasil jawaban</span>
           </label>
         </article>
 
@@ -439,7 +672,7 @@ function SettingsPage({
         </article>
 
         <article>
-          <h3>Riwayat sesi</h3>
+          <h3>Data belajar</h3>
           <p>{progress.sessions.length} sesi tersimpan.</p>
           <div className="data-actions">
             <button type="button" onClick={exportData}>Export data</button>
@@ -451,12 +684,36 @@ function SettingsPage({
         </article>
       </div>
 
-      <div className="history-list">
-        {progress.sessions.slice(0, 8).map((session) => (
-          <article key={session.id}>
-            <strong>{levels.find((level) => level.id === session.levelId)?.title ?? session.levelId}</strong>
-            <span>{new Date(session.date).toLocaleString('id-ID')}</span>
-            <b>{session.correct}/{session.total}</b>
+      <section className="teacher-panel" aria-label="Kurikulum dan metode">
+        <div>
+          <p className="eyebrow">Metode</p>
+          <h2>Merdeka-aligned Singapore Math</h2>
+          <p className="coach-message">{coachMessage}</p>
+        </div>
+        <dl>
+          <div>
+            <dt>Progress level aktif</dt>
+            <dd>
+              {levelProgress?.attempts ?? 0} percobaan, {levelProgress?.correct ?? 0} benar,
+              streak {levelProgress?.streak ?? 0}
+            </dd>
+          </div>
+          <div>
+            <dt>Kurikulum Merdeka</dt>
+            <dd>{selectedLevel.merdeka}</dd>
+          </div>
+          <div>
+            <dt>Singapore Math</dt>
+            <dd>{selectedLevel.singapore}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <div className="curriculum-grid">
+        {curriculumNotes.map((note) => (
+          <article key={note.title}>
+            <h3>{note.title}</h3>
+            <p>{note.body}</p>
           </article>
         ))}
       </div>
@@ -547,13 +804,13 @@ function VisualModel({ challenge, showHint }: { challenge: Challenge; showHint: 
         <div className="place-column">
           <strong>Puluhan</strong>
           <div className="tens-blocks">
-          {Array.from({ length: tens }, (_, index) => <span key={index}></span>)}
+            {Array.from({ length: tens }, (_, index) => <span key={index}></span>)}
           </div>
         </div>
         <div className="place-column">
           <strong>Satuan</strong>
           <div className="ones-blocks">
-          {Array.from({ length: ones }, (_, index) => <i key={index}></i>)}
+            {Array.from({ length: ones }, (_, index) => <i key={index}></i>)}
           </div>
         </div>
       </div>
@@ -606,10 +863,52 @@ function ObjectToken({ item = 'koin', muted = false }: { item?: string; muted?: 
   return <span className={`object-token item-${item} ${muted ? 'muted-token' : ''}`} aria-label={item}></span>
 }
 
-export default App
+function getLevelsForBand(band: LearningBand | null) {
+  if (!band) return []
+  if (band === 'Kelas 1') return levels.filter((level) => classOneLevelIds.includes(level.id))
+  return levels.filter((level) => level.band === band)
+}
 
-function createSession(levelId: LevelId, seed: number) {
-  return Array.from({ length: sessionLength }, (_, index) => makeChallenge(levelId, mixSeed(seed, index)))
+function getAnswerClass(
+  option: number,
+  selectedAnswer: number | null,
+  answer: number,
+  feedback: 'idle' | 'correct' | 'wrong',
+) {
+  if (feedback === 'idle') return ''
+  if (option === answer) return 'correct-answer'
+  if (option === selectedAnswer) return 'wrong-answer'
+  return 'dimmed-answer'
+}
+
+function getCoachMessage(attempts: number, accuracy: number, streak: number) {
+  if (attempts === 0) return 'Mulai dengan mode santai. Fokuskan anak pada strategi, bukan kecepatan.'
+  if (streak >= 3) return 'Streak sudah bagus. Anak siap diberi soal baru dengan angka sedikit lebih besar.'
+  if (accuracy >= 80) return 'Konsep mulai kuat. Lanjutkan variasi cerita agar anak tidak hanya menghafal pola soal.'
+  if (accuracy >= 50) return 'Masih perlu penguatan. Tampilkan benda atau garis bilangan sebelum simbol angka.'
+  return 'Turunkan tekanan. Ulangi tahap concrete: hitung benda, kelompokkan, lalu baru jawab.'
+}
+
+function getLevelTips(levelId: LevelId) {
+  const tips: Record<LevelId, string[]> = {
+    'count-10': ['Sentuh satu benda untuk satu bilangan.', 'Cocokkan jumlah akhir dengan pilihan jawaban.'],
+    'compare-20': ['Cari angka yang posisinya lebih jauh di garis bilangan.', 'Bandingkan dua angka dulu sebelum memilih.'],
+    'add-10': ['Gabungkan dua kelompok benda.', 'Hitung dari kelompok yang lebih besar agar lebih cepat.'],
+    'subtract-10': ['Mulai dari jumlah awal, lalu coret atau mundur sebanyak yang diambil.', 'Baca ulang pertanyaan: yang dicari adalah sisa.'],
+    'bonds-10': ['Bayangkan 10 sebagai satu kelompok penuh.', 'Cari pasangan yang melengkapi angka pertama menjadi 10.'],
+    'add-20': ['Pecah angka untuk membuat 10 lebih dulu.', 'Setelah sampai 10, tambahkan sisa angkanya.'],
+    'subtract-20': ['Mundur ke 10 dulu jika angkanya dekat.', 'Gunakan garis bilangan untuk melihat lompatan mundur.'],
+    'place-value': ['Pisahkan puluhan dan satuan.', 'Baca angka dua digit sebagai beberapa puluhan dan beberapa satuan.'],
+    'add-100': ['Tambah puluhan dengan puluhan, satuan dengan satuan.', 'Susun jawaban dari nilai tempatnya.'],
+    'multiply-groups': ['Hitung jumlah kelompok dan isi setiap kelompok.', 'Perkalian adalah penjumlahan kelompok sama banyak.'],
+    'divide-share': ['Bagikan benda satu per satu sampai semua kelompok sama.', 'Jawaban adalah isi tiap kelompok.'],
+    'pattern-logic': ['Lihat selisih antar angka.', 'Gunakan pola yang sama untuk menemukan angka hilang.'],
+  }
+  return tips[levelId]
+}
+
+function createSession(levelId: LevelId, seed: number, total: number) {
+  return Array.from({ length: total }, (_, index) => makeChallenge(levelId, mixSeed(seed, index)))
 }
 
 function mixSeed(seed: number, index: number) {
@@ -621,9 +920,21 @@ function mixSeed(seed: number, index: number) {
   return (value >>> 0) % 2147483646 + 1
 }
 
-function getResultMessage(correct: number) {
-  if (correct >= 9) return 'Penguasaan sangat baik. Anak siap naik ke variasi soal berikutnya.'
-  if (correct >= 7) return 'Sudah kuat. Ulangi sekali lagi untuk membuat strategi lebih otomatis.'
-  if (correct >= 5) return 'Cukup baik. Perlu penguatan visual sebelum latihan simbol.'
+function getResultMessage(correct: number, total: number) {
+  const ratio = correct / total
+  if (ratio >= 0.9) return 'Penguasaan sangat baik. Anak siap naik ke variasi soal berikutnya.'
+  if (ratio >= 0.7) return 'Sudah kuat. Ulangi sekali lagi untuk membuat strategi lebih otomatis.'
+  if (ratio >= 0.5) return 'Cukup baik. Perlu penguatan visual sebelum latihan simbol.'
   return 'Kembali ke tahap konkret. Gunakan benda atau model gambar lebih dulu.'
 }
+
+function speak(text: string) {
+  if (!('speechSynthesis' in window)) return
+  window.speechSynthesis.cancel()
+  const utterance = new SpeechSynthesisUtterance(text)
+  utterance.lang = 'id-ID'
+  utterance.rate = 0.92
+  window.speechSynthesis.speak(utterance)
+}
+
+export default App

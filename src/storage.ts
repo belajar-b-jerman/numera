@@ -33,6 +33,7 @@ export type SessionRecord = {
 export type SettingsState = {
   hintsEnabled: boolean
   answerMode: 'choice' | 'type'
+  voiceEnabled: boolean
 }
 
 const key = 'petualangan-angka-progress'
@@ -47,6 +48,7 @@ export const initialProgress: ProgressState = {
 export const initialSettings: SettingsState = {
   hintsEnabled: true,
   answerMode: 'choice',
+  voiceEnabled: true,
 }
 
 export function loadProgress(): ProgressState {

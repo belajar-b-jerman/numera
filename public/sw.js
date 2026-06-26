@@ -1,4 +1,4 @@
-const CACHE_NAME = 'numera-v2'
+const CACHE_NAME = 'numera-v3'
 const BASE_URL = new URL('./', self.location.href)
 const APP_SHELL = ['', 'index.html', 'manifest.webmanifest', 'app-icon.svg'].map((path) =>
   new URL(path, BASE_URL).toString(),
