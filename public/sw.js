@@ -1,5 +1,8 @@
-const CACHE_NAME = 'petualangan-angka-v1'
-const APP_SHELL = ['/', '/index.html', '/manifest.webmanifest', '/app-icon.svg']
+const CACHE_NAME = 'numera-v2'
+const BASE_URL = new URL('./', self.location.href)
+const APP_SHELL = ['', 'index.html', 'manifest.webmanifest', 'app-icon.svg'].map((path) =>
+  new URL(path, BASE_URL).toString(),
+)
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)))
@@ -24,7 +27,7 @@ self.addEventListener('fetch', (event) => {
           caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
           return response
         })
-        .catch(() => caches.match('/index.html'))
+        .catch(() => caches.match(new URL('index.html', BASE_URL).toString()))
     }),
   )
 })
