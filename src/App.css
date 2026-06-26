@@ -1,6 +1,8 @@
 .app-shell {
   min-height: 100vh;
   padding: 24px;
+  background:
+    linear-gradient(135deg, rgba(255, 241, 199, 0.48), rgba(232, 244, 255, 0.72) 42%, rgba(241, 235, 255, 0.56));
 }
 
 .topbar,
@@ -20,7 +22,7 @@
   display: flex;
   justify-content: space-between;
   gap: 24px;
-  align-items: center;
+  align-items: end;
   padding: 12px 0 22px;
 }
 
@@ -28,6 +30,7 @@
   display: grid;
   gap: 10px;
   justify-items: end;
+  align-self: end;
 }
 
 .main-nav {
@@ -370,6 +373,18 @@ button {
   font-size: clamp(2.5rem, 9vw, 5.2rem);
   line-height: 0.95;
   word-break: break-word;
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .visual-model {
@@ -912,8 +927,17 @@ button {
   display: grid;
   gap: 10px;
   min-height: 156px;
+  border-top: 8px solid #f7b267;
   padding: 22px;
   text-align: left;
+}
+
+.grade-card:nth-child(2) {
+  border-top-color: #72c6a1;
+}
+
+.grade-card:nth-child(3) {
+  border-top-color: #8fb3ff;
 }
 
 .grade-card strong {
@@ -936,6 +960,10 @@ button {
 .grade-card.active {
   border-color: #3151d3;
   background: #eef3ff;
+}
+
+.module-page {
+  animation: page-in 180ms ease-out;
 }
 
 .module-section {
@@ -976,6 +1004,12 @@ button {
   border-top: 8px solid var(--level-color, #3151d3);
   padding: 18px;
   text-align: left;
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.module-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 22px 52px rgba(24, 39, 75, 0.12);
 }
 
 .module-card strong {
@@ -1154,6 +1188,10 @@ dd {
     display: grid;
   }
 
+  .topbar {
+    align-items: start;
+  }
+
   .score-strip {
     justify-content: start;
   }
@@ -1249,7 +1287,7 @@ dd {
   }
 
   h1 {
-    font-size: 4rem;
+    font-size: clamp(4.2rem, 20vw, 5.8rem);
   }
 
   .hero-subtitle {

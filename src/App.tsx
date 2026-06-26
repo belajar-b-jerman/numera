@@ -155,16 +155,10 @@ function App() {
     <main className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">Numera</p>
           <h1>Numera</h1>
           <p className="hero-subtitle">Latihan numerasi berbasis Singapore Math untuk anak TK B sampai kelas 2.</p>
         </div>
         <div className="top-actions">
-          <div className="score-strip" aria-label="Progress belajar">
-            <span>{progress.stars} poin</span>
-            <span>Soal {screen === 'practice' ? Math.min(questionIndex + 1, currentTotal) : 0}/{currentTotal}</span>
-            <span>{accuracy}% level ini</span>
-          </div>
           <PrimaryNav active={screen} learningActive={learningActive} setScreen={setScreen} openLearning={openLearning} />
         </div>
       </header>
@@ -293,6 +287,49 @@ function LearningHome({
 
   const visibleLevels = getLevelsForBand(selectedBand)
 
+  if (selectedBand) {
+    return (
+      <section className="learning-home module-page" aria-label={`Latihan ${selectedBand}`}>
+        <div className="module-heading">
+          <div>
+            <p className="eyebrow">Latihan</p>
+            <h2>{selectedBand}</h2>
+          </div>
+          <button type="button" onClick={() => setSelectedBand(null)}>Pilih jenjang lain</button>
+        </div>
+        <div className="module-grid">
+          {visibleLevels.map((level) => {
+            const levelIndex = levels.findIndex((item) => item.id === level.id) + 1
+            const levelProgress = progress.levels[level.id]
+            const accuracy = levelProgress?.attempts ? Math.round((levelProgress.correct / levelProgress.attempts) * 100) : null
+            return (
+              <button
+                key={level.id}
+                className="module-card"
+                style={{ '--level-color': level.color } as CSSProperties}
+                type="button"
+                onClick={() => openLevelIntro(level.id)}
+              >
+                <span className="level-index">{levelIndex}</span>
+                <strong>{level.title}</strong>
+                <small>{level.subtitle}</small>
+                {accuracy !== null && <b>{accuracy}% akurasi</b>}
+              </button>
+            )
+          })}
+          {selectedBand === 'Kelas 1' && (
+            <article className="module-card exam-card" aria-label="Mode ujian belum tersedia">
+              <span className="level-index">U</span>
+              <strong>Mode Ujian</strong>
+              <small>Campuran semua latihan Kelas 1.</small>
+              <b>Segera dibuat</b>
+            </article>
+          )}
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="learning-home" aria-label="Pilih latihan">
       <div className="section-heading">
@@ -312,47 +349,6 @@ function LearningHome({
           </button>
         ))}
       </div>
-
-      {selectedBand && (
-        <section className="module-section" aria-label={`Latihan ${selectedBand}`}>
-          <div className="module-heading">
-            <div>
-              <p className="eyebrow">{selectedBand}</p>
-              <h2>Modul latihan</h2>
-            </div>
-            <button type="button" onClick={() => setSelectedBand(null)}>Ganti jenjang</button>
-          </div>
-          <div className="module-grid">
-            {visibleLevels.map((level) => {
-              const levelIndex = levels.findIndex((item) => item.id === level.id) + 1
-              const levelProgress = progress.levels[level.id]
-              const accuracy = levelProgress?.attempts ? Math.round((levelProgress.correct / levelProgress.attempts) * 100) : 0
-              return (
-                <button
-                  key={level.id}
-                  className="module-card"
-                  style={{ '--level-color': level.color } as CSSProperties}
-                  type="button"
-                  onClick={() => openLevelIntro(level.id)}
-                >
-                  <span className="level-index">{levelIndex}</span>
-                  <strong>{level.title}</strong>
-                  <small>{level.subtitle}</small>
-                  <b>{levelProgress?.attempts ? `${accuracy}% akurasi` : 'Belum mulai'}</b>
-                </button>
-              )
-            })}
-            {selectedBand === 'Kelas 1' && (
-              <article className="module-card exam-card" aria-label="Mode ujian belum tersedia">
-                <span className="level-index">U</span>
-                <strong>Mode Ujian</strong>
-                <small>Campuran semua latihan Kelas 1.</small>
-                <b>Segera dibuat</b>
-              </article>
-            )}
-          </div>
-        </section>
-      )}
     </section>
   )
 }
@@ -457,7 +453,7 @@ function PracticePage({
           <div className="story-panel">
             <p>{challenge.story}</p>
             <h3>{challenge.prompt}</h3>
-            <strong>{challenge.expression}</strong>
+            {hintOpen && <strong>{challenge.expression}</strong>}
           </div>
 
           <VisualModel challenge={challenge} showHint={hintOpen} />
